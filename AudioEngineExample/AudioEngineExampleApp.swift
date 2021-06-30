@@ -9,9 +9,14 @@ import SwiftUI
 
 @main
 struct AudioEngineExampleApp: App {
-    var body: some Scene {
-        WindowGroup {
-            ContentView()
-        }
+  let audioUtil = AudioUtil()
+  
+  var body: some Scene {
+    WindowGroup {
+      ContentView(audioUtil: audioUtil)
+        .onAppear(perform: {
+          audioUtil.initializeAudioEngine()
+        })
     }
+  }
 }
