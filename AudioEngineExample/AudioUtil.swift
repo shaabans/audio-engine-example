@@ -16,14 +16,29 @@ class AudioUtil {
   var delay = AVAudioUnitDelay()
   
   let dataProcessingDispatchQueue = DispatchQueue(label: "data.processing")
-  var rawAudioQueue: Queue = Queue<Float>()
-  var processedAudioQueue: Queue = Queue<Float>()
+  var rawAudioQueue = Queue<Float>()
+  var processedAudioQueue = Queue<Float>()
   let sampleSize = 1024
+  
+  // typealias AVAudioSourceNodeRenderBlock =
+  // (UnsafeMutablePointer<ObjCBool>, UnsafePointer<AudioTimeStamp>, AVAudioFrameCount,
+  //  UnsafeMutablePointer<AudioBufferList>) -> OSStatus
+  private lazy var srcNode = AVAudioSourceNode { _, _, frameCount, audioBufferList -> OSStatus in
+    let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
+    for frame in 0..<Int(frameCount) {
+      let value = self.processedAudioQueue.dequeue()
+      for buffer in ablPointer {
+        let buf: UnsafeMutableBufferPointer<Float> = UnsafeMutableBufferPointer(buffer)
+        buf[frame] = value ?? 0.0
+        print("Value: \(value)")
+      }
+    }
+    return noErr
+  }
   
   func initializeAudioEngine() {
     engine.stop()
     engine.reset()
-    engine = AVAudioEngine()
     
     do {
       let session = AVAudioSession.sharedInstance()
@@ -40,26 +55,16 @@ class AudioUtil {
     let input = engine.inputNode
     let format = input.inputFormat(forBus: 0)
     
-    //settings for reverb
-    reverb.loadFactoryPreset(.mediumChamber)
-    reverb.wetDryMix = 40 //0-100 range
-    engine.attach(reverb)
+    engine.attach(srcNode)
+    engine.connect(srcNode,
+                   to: engine.mainMixerNode,
+                   format: format)
+    engine.connect(engine.mainMixerNode,
+                   to: engine.outputNode,
+                   format: format)
+    engine.mainMixerNode.outputVolume = 0.5
     
-    delay.delayTime = 0.2 // 0-2 range
-    engine.attach(delay)
-    
-    //settings for distortion
-    distortion.loadFactoryPreset(.drumsBitBrush)
-    distortion.wetDryMix = 20 //0-100 range
-    engine.attach(distortion)
-    
-    
-    engine.connect(input, to: reverb, format: format)
-    engine.connect(reverb, to: distortion, format: format)
-    engine.connect(distortion, to: delay, format: format)
-    engine.connect(delay, to: engine.mainMixerNode, format: format)
-    
-    try! engine.start()
+    print("AudioEngine initialized")
   }
   
   func startRecording() {
@@ -71,18 +76,22 @@ class AudioUtil {
                         
                         // Grab first channel (there are 2 channels coming in)
                         let channel0Buffer: UnsafeMutablePointer<Float> = buffer.floatChannelData!.pointee
-
+                    
                         // Throw this frame into the raw audio data queue
+                        var audioFrame = [Float](repeating: 0.0, count: Int(buffer.frameLength))
                         for index in 0 ..< buffer.frameLength {
                           let value = channel0Buffer.advanced(by: Int(index)).pointee
-                          self.rawAudioQueue.enqueue(value)
+                          audioFrame[Int(index)] = value
                         }
+                        self.rawAudioQueue.enqueue(audioFrame)
                         
-                        // Process the data on a serial queue ... will this gum up the main thread?
+                        // Process the data on a serial queue
                         self.dataProcessingDispatchQueue.async {
                           self.processData()
                         }
                       })
+    engine.prepare()
+    try! engine.start()
   }
   
   func stopRecording() {
@@ -91,29 +100,48 @@ class AudioUtil {
   }
   
   // Convert raw audio data to spectrogram output and processed audio output
+  // and place on their respective queues
   func processData() {
     while rawAudioQueue.count >= self.sampleSize {
-      for _ in 0 ..< self.sampleSize {
+      let audioFrame = rawAudioQueue.dequeue(samples: self.sampleSize) ??
+                       [Float](repeating: 0.0, count: self.sampleSize)
+      for index in 0 ..< audioFrame.count {
         // Just copy data over for example
-        processedAudioQueue.enqueue(rawAudioQueue.dequeue()!)
+        processedAudioQueue.enqueue(audioFrame[index])
       }
       print("raw audio size: \(rawAudioQueue.count)")
       print("processed audio size: \(processedAudioQueue.count)")
     }
   }
   
-  struct Queue<T> {
+  class Queue<T> {
     private var elements: [T] = []
     
-    mutating func enqueue(_ value: T) {
-      elements.append(value)
+    func enqueue(_ value: T) {
+      self.elements.append(value)
     }
     
-    mutating func dequeue() -> T? {
-      guard !elements.isEmpty else {
-        return nil
+    func enqueue(_ arrayValue: [T]) {
+      for value in arrayValue {
+        self.elements.append(value)
       }
-      return elements.removeFirst()
+    }
+    
+    func dequeue() -> T? {
+      var output: T? = nil
+      if !self.elements.isEmpty {
+        output = self.elements.removeFirst()
+      }
+      return output
+    }
+    
+    func dequeue(samples: Int) -> [T]? {
+      var output: [T]? = nil
+      if !self.elements.isEmpty && self.elements.count > samples {
+        output = Array(self.elements[0 ..< samples])
+        self.elements.removeFirst(samples)
+      }
+      return output
     }
     
     var count: Int {
