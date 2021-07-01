@@ -14,6 +14,7 @@ class AudioUtil {
   var audioBuffer = AVAudioPCMBuffer()
   var outputFile = AVAudioFile()
   var delay = AVAudioUnitDelay()
+  var format = AVAudioFormat()
   
   let dataProcessingDispatchQueue = DispatchQueue(label: "data.processing")
   var rawAudioQueue = Queue<Float>()
@@ -25,12 +26,14 @@ class AudioUtil {
   //  UnsafeMutablePointer<AudioBufferList>) -> OSStatus
   private lazy var srcNode = AVAudioSourceNode { _, _, frameCount, audioBufferList -> OSStatus in
     let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
-    for frame in 0..<Int(frameCount) {
-      let value = self.processedAudioQueue.dequeue()
-      for buffer in ablPointer {
-        let buf: UnsafeMutableBufferPointer<Float> = UnsafeMutableBufferPointer(buffer)
-        buf[frame] = value ?? 0.0
-        print("Value: \(value)")
+    self.dataProcessingDispatchQueue.async {
+      for frame in 0..<Int(frameCount) {
+        let value = self.processedAudioQueue.dequeue()
+        for buffer in ablPointer {
+          let buf: UnsafeMutableBufferPointer<Float> = UnsafeMutableBufferPointer(buffer)
+          buf[frame] = value ?? 0.0
+          print("Value: \(value)")
+        }
       }
     }
     return noErr
@@ -53,7 +56,7 @@ class AudioUtil {
     }
     
     let input = engine.inputNode
-    let format = input.inputFormat(forBus: 0)
+    self.format = input.inputFormat(forBus: 0)
     
     engine.attach(srcNode)
     engine.connect(srcNode,
@@ -69,9 +72,9 @@ class AudioUtil {
   
   func startRecording() {
     let mixer = engine.mainMixerNode
-    let format = mixer.outputFormat(forBus: 0)
     
-    mixer.installTap(onBus: 0, bufferSize: 1024, format: format, block:
+    mixer.installTap(onBus: 0, bufferSize: AVAudioFrameCount(self.sampleSize),
+                     format: self.format, block:
                       { (buffer: AVAudioPCMBuffer!, time: AVAudioTime!) -> Void in
                         
                         // Grab first channel (there are 2 channels coming in)
@@ -103,8 +106,9 @@ class AudioUtil {
   // and place on their respective queues
   func processData() {
     while rawAudioQueue.count >= self.sampleSize {
+      
       let audioFrame = rawAudioQueue.dequeue(samples: self.sampleSize) ??
-                       [Float](repeating: 0.0, count: self.sampleSize)
+        [Float](repeating: 0.0, count: self.sampleSize)
       for index in 0 ..< audioFrame.count {
         // Just copy data over for example
         processedAudioQueue.enqueue(audioFrame[index])
@@ -112,6 +116,7 @@ class AudioUtil {
       print("raw audio size: \(rawAudioQueue.count)")
       print("processed audio size: \(processedAudioQueue.count)")
     }
+    
   }
   
   class Queue<T> {
