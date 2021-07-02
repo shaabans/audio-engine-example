@@ -45,14 +45,15 @@ class AudioUtil {
   func initializeAudioEngine() {
     engine.stop()
     engine.reset()
+    let session = AVAudioSession.sharedInstance()
     
     do {
-      let session = AVAudioSession.sharedInstance()
       try session.setCategory(AVAudioSession.Category.playAndRecord,
                               mode: AVAudioSession.Mode.voiceChat,
                               options: [.allowBluetooth])
-      try session.setPreferredIOBufferDuration(4096.0 / 44100.0)
+      try session.setPreferredIOBufferDuration(512.0 / 44100.0) // About 12ms
       try session.setActive(true)
+      try session.setPreferredInput(session.availableInputs![0])
     } catch {
       assertionFailure("AVAudioSession setup error: \(error)")
     }
@@ -69,6 +70,11 @@ class AudioUtil {
     self.engine.mainMixerNode.outputVolume = 1.0
 
     print("AudioEngine initialized")
+    
+    let inputs = session.availableInputs
+    for input in inputs! {
+      print(input)
+    }
   }
   
   func startRecording() {
