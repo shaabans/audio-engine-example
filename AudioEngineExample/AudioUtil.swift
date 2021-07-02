@@ -9,11 +9,8 @@ import AVFoundation
 
 class AudioUtil {
   var engine = AVAudioEngine()
-  //var distortion = AVAudioUnitDistortion()
-  //var reverb = AVAudioUnitReverb()
-  //var delay = AVAudioUnitDelay()
-  //var audioBuffer: AVAudioPCMBuffer?
   var format: AVAudioFormat?
+  var isListening = false
   
   let dataProcessingDispatchQueue = DispatchQueue(label: "data.processing")
   var rawAudioQueue = Queue<Float>()
@@ -23,24 +20,24 @@ class AudioUtil {
   // typealias AVAudioSourceNodeRenderBlock =
   // (UnsafeMutablePointer<ObjCBool>, UnsafePointer<AudioTimeStamp>, AVAudioFrameCount,
   //  UnsafeMutablePointer<AudioBufferList>) -> OSStatus
-  private lazy var srcNode = AVAudioSourceNode { _, _, frameCount, audioBufferList -> OSStatus in
-    let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
-    self.dataProcessingDispatchQueue.async {
-      print("Sending \(frameCount) frames to mixer")
-      for frame in 0 ..< Int(frameCount) {
-        let value = self.processedAudioQueue.dequeue()
-        for buffer in ablPointer {
-          let buf: UnsafeMutableBufferPointer<Float> = UnsafeMutableBufferPointer(buffer)
-          let bufCount = buf.count
-          if frame < bufCount {
-            buf[frame] = value ?? 0.0
+  private lazy var srcNode = AVAudioSourceNode(format: self.format!, renderBlock:
+    { _, _, frameCount, audioBufferList -> OSStatus in
+      let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
+      self.dataProcessingDispatchQueue.async {
+        //print("Sending \(frameCount) frames to mixer")
+        for frame in 0 ..< Int(frameCount) {
+          let value = self.processedAudioQueue.dequeue()
+          for buffer in ablPointer {
+            let buf: UnsafeMutableBufferPointer<Float> = UnsafeMutableBufferPointer(buffer)
+            let bufCount = buf.count
+            if frame < bufCount && self.isListening {
+              buf[frame] = value ?? 0.0
+            }
           }
-          //print("Value: \(value ?? 0.0)")
         }
       }
-    }
-    return noErr
-  }
+      return noErr
+    })
   
   func initializeAudioEngine() {
     engine.stop()
@@ -49,11 +46,14 @@ class AudioUtil {
     
     do {
       try session.setCategory(AVAudioSession.Category.playAndRecord,
-                              mode: AVAudioSession.Mode.voiceChat,
+                              mode: AVAudioSession.Mode.default,
                               options: [.allowBluetooth])
-      try session.setPreferredIOBufferDuration(512.0 / 44100.0) // About 12ms
+      //try session.setPreferredIOBufferDuration(256.0 / 44100.0) // About 6ms
+      if let phoneMicIndex = AVAudioSession.sharedInstance().availableInputs?.firstIndex(where: { $0.portType == .builtInMic }) {
+        try AVAudioSession.sharedInstance().setPreferredInput(AVAudioSession.sharedInstance().availableInputs?[phoneMicIndex])
+      }
+      try session.setInputGain(1.0)
       try session.setActive(true)
-      try session.setPreferredInput(session.availableInputs![0])
     } catch {
       assertionFailure("AVAudioSession setup error: \(error)")
     }
@@ -71,6 +71,7 @@ class AudioUtil {
 
     print("AudioEngine initialized")
     
+    print("Available Inputs")
     let inputs = session.availableInputs
     for input in inputs! {
       print(input)
@@ -81,8 +82,8 @@ class AudioUtil {
     let input = self.engine.inputNode
     
     input.installTap(
-      onBus: 0, bufferSize: AVAudioFrameCount(self.sampleSize * 4),
-      format: input.inputFormat(forBus: 0),
+      onBus: 0, bufferSize: AVAudioFrameCount(self.sampleSize),
+      format: self.format,
       block: { (buffer: AVAudioPCMBuffer!, time: AVAudioTime!) -> Void in
         // Grab first channel (there are 2 channels coming in)
         let channel0Buffer: UnsafeMutablePointer<Float> = buffer!.floatChannelData!.pointee
@@ -102,13 +103,16 @@ class AudioUtil {
         }
       })
     
-    engine.prepare()
+    //self.initializeAudioEngine()
+    self.engine.prepare()
     try! engine.start()
+    self.isListening = true
   }
   
   func stopRecording() {
     engine.inputNode.removeTap(onBus: 0)
     engine.stop()
+    self.isListening = false
   }
   
   // Convert raw audio data to spectrogram output and processed audio output
@@ -118,29 +122,32 @@ class AudioUtil {
       // Just copy data over for example
       processedAudioQueue.enqueue(rawAudioQueue.dequeue() ?? 0.0)
     }
-    print("raw audio size: \(rawAudioQueue.count)")
-    print("processed audio size: \(processedAudioQueue.count)")
+    print("processed audio beyind by: \(processedAudioQueue.enqueueCounter - processedAudioQueue.dequeueCounter)")
   }
   
-  class Queue<T> {
+  struct Queue<T> {
     private var elements: [T] = []
+    public var enqueueCounter: Int = 0
+    public var dequeueCounter: Int = 0
     
-    func enqueue(_ value: T) {
+    mutating func enqueue(_ value: T) {
       self.elements.append(value)
+      self.enqueueCounter += 1
     }
     
-    func enqueue(_ arrayValue: [T]) {
+    mutating func enqueue(_ arrayValue: [T]) {
       for value in arrayValue {
-        self.elements.append(value)
+        self.enqueue(value)
       }
     }
     
-    func dequeue() -> T? {
-      var output: T? = nil
+    mutating func dequeue() -> T? {
       if !self.elements.isEmpty {
-        output = self.elements.removeFirst()
+        self.dequeueCounter += 1
+        return self.elements.removeFirst()
+      } else {
+        return nil
       }
-      return output
     }
     
     var count: Int {
