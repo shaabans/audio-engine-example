@@ -6,16 +6,18 @@
 //
 
 import AVFoundation
+import Accelerate
 
 class AudioUtil {
   var engine = AVAudioEngine()
   var format: AVAudioFormat?
   var isListening = false
-  
+  let sampleSize = 1024
   let dataProcessingDispatchQueue = DispatchQueue(label: "data.processing")
   var rawAudioQueue = Queue<Float>()
   var processedAudioQueue = Queue<Float>()
-  let sampleSize = 1024
+  lazy var forwardDCT = vDSP.DCT(count: self.sampleSize, transformType: .II)!
+  lazy var inverseDCT = vDSP.DCT(count: self.sampleSize, transformType: .III)!
   
   // typealias AVAudioSourceNodeRenderBlock =
   // (UnsafeMutablePointer<ObjCBool>, UnsafePointer<AudioTimeStamp>, AVAudioFrameCount,
@@ -90,7 +92,6 @@ class AudioUtil {
         
         // Throw this frame into the raw audio data queue
         var audioFrame = [Float](repeating: 0.0, count: Int(buffer.frameLength))
-        print("Buffer frameLength: \(buffer!.frameLength)")
         for index in 0 ..< buffer!.frameLength {
           let value = channel0Buffer.advanced(by: Int(index)).pointee
           audioFrame[Int(index)] = value
@@ -119,13 +120,64 @@ class AudioUtil {
   // and place on their respective queues
   func processData() {
     while rawAudioQueue.count > 0 {
-      // Just copy data over for example
-      processedAudioQueue.enqueue(rawAudioQueue.dequeue() ?? 0.0)
+      var rawSample = [Float](repeating: 0.0, count: self.sampleSize)
+      var forwardDCTSample = [Float](repeating: 0.0, count: self.sampleSize)
+      var forwardDCTMushedSample = [Float](repeating: 0.0, count: self.sampleSize)
+      var processedSample = [Float](repeating: 0.0, count: self.sampleSize)
+      
+      for index in 0 ..< self.sampleSize {
+        rawSample[index] = rawAudioQueue.dequeue() ?? 0.0
+      }
+      
+      self.forwardDCT.transform(rawSample,
+                                result: &forwardDCTSample)
+      
+      // Get to mushing
+      let threshold = 3000
+      let range = 22050
+      let scaledThreshold = Int(threshold * self.sampleSize / Int(range))
+      for i in 0 ..< self.sampleSize {
+        forwardDCTMushedSample[i] = forwardDCTSample[i]
+        if i > scaledThreshold {
+          let newI = self.octaveUnderThreshold(input: i, threshold: scaledThreshold)
+          forwardDCTMushedSample[newI] = forwardDCTMushedSample[i] + forwardDCTMushedSample[newI]
+        }
+      }
+      
+      // Perform inverse DCT.
+      inverseDCT.transform(forwardDCTMushedSample,
+                           result: &processedSample)
+      
+      //In-place scale inverse DCT result by n / 2.
+      //Output samples are now in range -1...+1
+      vDSP.divide(processedSample,
+                  abs(Float(self.sampleSize / 2)),
+                  result: &processedSample)
+      
+      processedAudioQueue.enqueue(processedSample)
     }
-    print("processed audio beyind by: \(processedAudioQueue.enqueueCounter - processedAudioQueue.dequeueCounter)")
+    
+    // This is a slow process, so we'll drop samples as needed
+    var dropCount: Int = 0
+    while processedAudioQueue.enqueueCounter - processedAudioQueue.dequeueCounter > 10000 {
+      _ = processedAudioQueue.dequeue()
+      dropCount += 1
+    }
+    print("Dropped \(dropCount) samples")
   }
   
-  struct Queue<T> {
+  // Returns the first 1st value under the threshold when successively dividing by 2,
+  // for example if the input is 100 and the threshold is 40, this will return 25 (divide
+  // input by 2 twice)
+  func octaveUnderThreshold(input: Int, threshold: Int) -> Int {
+    var output = input
+    while output > threshold {
+      output = Int (output / 2)
+    }
+    return output
+  }
+  
+  struct Queue<T: Comparable> {
     private var elements: [T] = []
     public var enqueueCounter: Int = 0
     public var dequeueCounter: Int = 0
@@ -148,6 +200,10 @@ class AudioUtil {
       } else {
         return nil
       }
+    }
+    
+    var max: T? {
+      return elements.max()
     }
     
     var count: Int {
