@@ -12,7 +12,7 @@ class AudioUtil {
   var engine = AVAudioEngine()
   var format: AVAudioFormat?
   var isListening = false
-  let sampleSize = 1024
+  let sampleSize = 512
   let dataProcessingDispatchQueue = DispatchQueue(label: "data.processing")
   var rawAudioQueue = Queue<Float>()
   var processedAudioQueue = Queue<Float>()
@@ -61,7 +61,6 @@ class AudioUtil {
     }
     
     self.format = self.engine.outputNode.outputFormat(forBus: 0)
-    
     self.engine.attach(srcNode)
     self.engine.connect(srcNode,
                         to: self.engine.mainMixerNode,

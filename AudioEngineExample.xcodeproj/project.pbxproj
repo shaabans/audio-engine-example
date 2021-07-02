@@ -14,6 +14,7 @@
 		DBB63ADF2689DDDB00EB8809 /* AudioEngineExampleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBB63ADE2689DDDB00EB8809 /* AudioEngineExampleTests.swift */; };
 		DBB63AEA2689DDDB00EB8809 /* AudioEngineExampleUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBB63AE92689DDDB00EB8809 /* AudioEngineExampleUITests.swift */; };
 		DBC7ACBB2689DF33004B2FB6 /* AudioUtil.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBC7ACBA2689DF33004B2FB6 /* AudioUtil.swift */; };
+		DBC7ACBD268F2C07004B2FB6 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = DBC7ACBC268F2C07004B2FB6 /* README.md */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -47,6 +48,7 @@
 		DBB63AE92689DDDB00EB8809 /* AudioEngineExampleUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioEngineExampleUITests.swift; sourceTree = "<group>"; };
 		DBB63AEB2689DDDB00EB8809 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		DBC7ACBA2689DF33004B2FB6 /* AudioUtil.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioUtil.swift; sourceTree = "<group>"; };
+		DBC7ACBC268F2C07004B2FB6 /* README.md */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -77,6 +79,7 @@
 		DBB63AC02689DDCA00EB8809 = {
 			isa = PBXGroup;
 			children = (
+				DBC7ACBC268F2C07004B2FB6 /* README.md */,
 				DBB63ACB2689DDCA00EB8809 /* AudioEngineExample */,
 				DBB63ADD2689DDDB00EB8809 /* AudioEngineExampleTests */,
 				DBB63AE82689DDDB00EB8809 /* AudioEngineExampleUITests */,
@@ -236,6 +239,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DBC7ACBD268F2C07004B2FB6 /* README.md in Resources */,
 				DBB63AD42689DDDB00EB8809 /* Preview Assets.xcassets in Resources */,
 				DBB63AD12689DDDB00EB8809 /* Assets.xcassets in Resources */,
 			);
